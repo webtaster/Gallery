@@ -3,6 +3,7 @@
 # Simple thumbnail picture gallery script.  With some Imagemagick transformations.
 #
 # 17/8/14  J McDonnell
+# 17/9/17  J McDonnell many updates
 #
 
 # Shrink videos if set to 1, leave them at raw size otherwise
@@ -13,7 +14,7 @@ VIDREDUCE=0
 PIC_REDUCE=35
 
 # Image thumbs will be this percentage in size of the raw image
-PIC_THUMB_REDUCE=10
+PIC_THUMB_REDUCE=7
 
 # If no other source could be found for a picture caption, this string will be used
 DEFAULT_PIC_CAPTION="Camera: James"
@@ -68,23 +69,16 @@ cat > $index <<%
 #
 
 
-for picture in $(ls | egrep -i "jpg|jpeg" | egrep -v "mp4$|txt$")
-#for picture in $(ls | egrep -i "jpg$|jpeg$" | egrep -v "mp4$|header$|txt$")
+#for picture in $(ls | egrep -i "jpg|jpeg" | egrep -v "mp4$|txt$")
+for picture in $(ls | egrep -i "jpg$|jpeg$|info" | egrep -v "mp4$|txt$")
 do
    echo
-   echo Pass 0 Processing file $picture
-
-   thumbpic="thumb_$picture"
-   targetpic="target_$picture"
-
-   echo matching picture $picture against string: header
-if [[ $picture =~ header ]]
-then
-   echo match
-fi
+   echo Processing file $picture
 
 
-   if [[ $picture =~ header ]]
+   # If this "picture" file name ends in "header", write its contents into the main index.html
+   # file as a heading and skip to the next loop
+   if [[ $picture =~ info ]]
    then
       header=$(cat $picture)
       echo writing header $header
@@ -93,10 +87,14 @@ fi
    fi
 
 
-   ################################################################################
-   # Create thumbnail and reduced size mage for picture, unless they exist already
-   ################################################################################
-   if [ ! -f "$targetdir/$thumbpic" ]
+   thumbpic="thumb_$picture"
+   targetpic="target_$picture"
+
+
+   ########################################################################################
+   # Create thumbnail and reduced size target image for picture, unless they exist already
+   ########################################################################################
+   if [[ ! -f "$targetdir/$thumbpic" || ! -f "$targetpic.html" ]]
    then
 
       echo Creating thumbnail for image $picture
@@ -107,7 +105,6 @@ fi
       date=""
 
 
-      echo checking for $picture.txt
       # If a txt file exists for picture and is not empty, use the contents as (or
       # add the contents to) the thumb and picture captions
       if [ -s $picture.txt ]
@@ -123,7 +120,7 @@ fi
 
       # If the picture file name looks like a file downloaded from Facebook, and no captions
       # have already been set, set the captions as "Facebook picture"
-      # title accordingly.  Otherwise, obtain the picture date from the file name.
+      # Otherwise, obtain the picture date from the file name.
       # I don't know how to obtain the creation date from a Facebook picture.
       if [[ ! -z $(egrep '_[0-9]{17}_' <<< $picture) ]]
       then
@@ -138,7 +135,7 @@ fi
 
 
       # If the picture caption is still empty at this point, ie. if there was no .txt
-      # file and it is not an image from Facebook, assume I took the picture
+      # file and it is not an image from Facebook, give it the default caption
       [[ -z $pic_caption ]] && pic_caption=$DEFAULT_PIC_CAPTION
 
 
@@ -153,8 +150,8 @@ fi
       # Okay add the header too, if there is one
       pic_caption="$pic_caption $header"
 
-      echo thumb caption: $thumb_caption
-      echo pic caption: $pic_caption
+      #echo thumb caption: $thumb_caption
+      #echo pic caption: $pic_caption
 
       #
       # Uncomment one of the four paragraphs below to achieve different effects.
@@ -166,12 +163,6 @@ fi
       #echo convert "$picture" -resize 10% "$thumbpic"
       #convert "$picture" -auto-orient -resize 10% "$thumbpic"
 
-      # Only show labels if john pic
-      #if [[ -z $(grep -i john <<< $thumb_caption) ]]
-      #then
-      #   thumb_caption=""
-      #fi
-      
 
       # Option 2. Create a thumb picture with a simple frame around it, no caption
       # And reduce the target image and put a frame around that also
@@ -209,10 +200,6 @@ fi
       #convert -auto-orient -set caption "$thumb_caption" small.png -pointsize 28 -background black -polaroid $angle -repage +10+5 png:polaroid.png
       #convert polaroid.png -background white -flatten $thumbpic
      
-
-      # Copy the image into the web site target directory.
-      #cp -p --no-clobber -v $picture $targetdir
-
    fi
 
 
@@ -231,10 +218,10 @@ fi
 
 
 
-   ######################################################################### 
-   # Check picture file for GPS information and if found, add a link from the
-   # main index.html file to the location in Openstreetmap
-   ######################################################################### 
+   ############################################################################### 
+   # Check the picture file for GPS information and if found, add a link from the
+   # main index.html file to the relecant coordinates in Openstreetmap
+   ############################################################################### 
 
    gpsposition=$(exiftool -r -s -c "%10f" -GPSPosition $picture)
 
@@ -245,7 +232,8 @@ fi
       #link=$(echo $gpsposition | awk '{print "http://www.google.co.uk/maps/place/"$3$4$5$6}')
       echo "<a target="_blank" href=$link>Map</a>" >> $index
    else
-      echo No GPS information found in picture $picture
+      #echo No GPS information found in picture $picture
+      x=1
    fi
 
 
@@ -257,7 +245,7 @@ done
 rm -f polaroid.png small.png
 
 
-# Create zipfile of all pics
+# Create zipfile of all pics.  Works fine but de-implemented for now
 #if [ ! -f "$targetdir/$zipfile" ]
 #then
 #   zip "$targetdir/$zipfile" $(ls | egrep -i "jpg$|jpeg$" | grep -v thumb)
@@ -270,20 +258,26 @@ rm -f polaroid.png small.png
 
 
 
+#######################################################################
 #
-# Process video files if any 
+# Process video files if any.  Experimental.  Presents mp4 files straight
+# in the browser, where they should play properly under HTML 5.
 #
+# It is difficult to retain the correct aspect ratio with mp4 files
+# shrunk with avconv, so the $VIDREDUCE is set to 0 by default, preventing
+# any attempt at reduction.  However, playing full size videos can take a
+# fair chunk of upload bandwidth on your server, making playback
+# occasionally jerky.
+#
+#######################################################################
 
 if [[ -n $(ls | egrep "mp4$") ]]
 then
    echo "*** Video files found ***"
 
    echo "<br><hr><p>Videos</p>" >> $index
-
    echo "<table>" >> $index
 
-   #ls | egrep "mp4$" | egrep -v 'thumb_|small_' |
-   #while read video
 
    for video in $(ls | egrep "mp4$" | egrep -v 'thumb_|small_')
    do
@@ -353,7 +347,10 @@ then
 
 fi
 
-echo "<br><font face=arial size=2>Updated on $(date).  Run time $SECONDS seconds.<br><br></html>" >> $index
+echo "<br><font face=arial size=2>Updated on $(date).  <a href=https://github.com/webtaster/Gallery>Gallery.sh</a> run time $SECONDS seconds.<br><br></html>" >> $index
+echo "<-- gallery.sh script, J McDonnell, https://github.com/webtaster/Gallery -->" >> $index
+
+
 
 tar -cf $targetdir.tar $targetdir
 #rm -r $targetdir
